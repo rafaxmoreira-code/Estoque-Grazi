@@ -6,6 +6,8 @@
 <title>Estoque Grazi</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -163,6 +165,47 @@ function setLoad(msg,p){const m=document.getElementById("loadMsg"),b=document.ge
 function hideLoad(){const el=document.getElementById("loading");if(el)el.style.display="none";}
 function toast(msg,type="ok"){const el=document.getElementById("toast");if(!el)return;el.textContent=msg;el.style.background=type==="err"?"#EF4444":"#10B981";el.style.display="block";if(toastT)clearTimeout(toastT);toastT=setTimeout(()=>el.style.display="none",3000);}
 function go(v){view=v;render();window.scrollTo(0,0);}
+function renderList(){
+  listSearch=document.getElementById("listSearchInp")?document.getElementById("listSearchInp").value:listSearch;
+  const el=document.getElementById("productList");
+  if(!el){render();return;}
+  const fil=products.filter(p=>{
+    const s=listSearch.toLowerCase();
+    return(!s||p.name.toLowerCase().includes(s)||String(p.code).toLowerCase().includes(s))
+      &&(listGroup==="Todos"||grp(p)===listGroup)&&(listLine==="Todas"||p.line===listLine);
+  });
+  document.getElementById("listCount").textContent=fil.length+" produto(s)";
+  el.innerHTML=fil.map(p=>{
+    const low=p.min_qty>0&&p.quantity<=p.min_qty;const ac=p.avg_cost||0;const sp=p.sale_price||0;
+    const marg=sp>0?((sp-ac)/sp)*100:null;const g=grp(p);
+    return`<div class="card" style="border-left:3px solid ${low?C.red:C.pink}">
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:4px">
+            <span style="font-size:14px;font-weight:700">${p.name}</span>
+            <span style="background:${g==="Woman"?C.pinkL:C.blueL};color:${g==="Woman"?C.pink:C.blue};font-size:9px;font-weight:700;padding:2px 6px;border-radius:20px">${g}</span>
+          </div>
+          <div style="font-size:11px;color:${C.gray};margin-bottom:4px">Cod: <b>${p.code}</b>${p.line?" · "+p.line:""}${p.info?" · "+p.info:""}</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <span style="font-size:12px;color:${C.gray}">Custo medio: <b>R$ ${fmt(ac)}</b></span>
+            ${sp>0?`<span style="font-size:12px;color:${C.gray}">Venda: <b style="color:${C.green}">R$ ${fmt(sp)}</b></span>`:""}
+          </div>
+          ${marg!==null?`<div style="margin-top:4px">${badge(marg)}</div>`:""}
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          <div style="text-align:right"><div style="font-size:22px;font-weight:800;color:${low?C.red:p.quantity>0?C.green:C.gray}">${p.quantity}</div><div style="font-size:10px;color:${C.gray}">un</div></div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <button class="tap-btn" style="background:${C.pinkL}" onclick="openEdit(${JSON.stringify(p.id)})">✏️</button>
+            <button class="tap-btn" style="background:${C.redL}" onclick="delProd(${JSON.stringify(p.id)})">🗑️</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+  // restore focus
+  const inp=document.getElementById("listSearchInp");
+  if(inp&&document.activeElement!==inp){const v=inp.value;inp.focus();inp.setSelectionRange(v.length,v.length);}
+}
 
 async function loadFromDB(){
   setLoad("Carregando produtos...",20);
@@ -306,7 +349,9 @@ async function saveProduct(){
   const code=gv("f_code").trim(),name=gv("f_name").trim();
   if(!code){toast("Digite o código","err");return;}
   if(!name){toast("Digite o nome","err");return;}
-  const g=gv("f_group"),base={code,name,line:gv("f_line"),grp:g,info:gv("f_info"),min_qty:numVal("f_minQty"),cost_price:numVal("f_costPrice"),sale_price:numVal("f_salePrice")};
+  const g=gv("f_group"),newLine=gv("f_line").trim();
+  if(newLine&&!allLines.includes(newLine)){allLines.push(newLine);allLines.sort();}
+  const base={code,name,line:newLine,grp:g,info:gv("f_info"),min_qty:numVal("f_minQty"),cost_price:numVal("f_costPrice"),sale_price:numVal("f_salePrice")};
   if(fd.id){products=products.map(p=>p.id===fd.id?{...p,...base}:p);await saveProd(products.find(p=>p.id===fd.id));toast("Atualizado!");}
   else{
     if(products.find(p=>p.code===base.code&&grp(p)===base.grp)){toast("Código já existe!","err");return;}
@@ -495,14 +540,19 @@ function buildList(){
   });
   return`
   <div style="margin:12px 14px 0;position:relative">
-    <input class="field-inp" placeholder="🔍 Nome ou código..." value="${listSearch.replace(/"/g,"&quot;")}"
-      oninput="listSearch=this.value;render()" autocomplete="off" style="padding-right:40px"/>
+    <input id="listSearchInp" class="field-inp" placeholder="Buscar por nome ou codigo..." value="${listSearch.replace(/"/g,"&quot;")}"
+      oninput="listSearch=this.value;renderList()" autocomplete="off" style="padding-right:40px"/>
     ${listSearch?`<button onclick="listSearch='';render()" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#9CA3AF;font-size:18px">✕</button>`:""}
   </div>
   <div class="chip-row">${chip("Todos",listGroup==="Todos","listGroup='Todos';render()")}${GROUPS.map(g=>chip(g,listGroup===g,`listGroup='${g}';render()`)).join("")}</div>
-  <div class="chip-row">${chip("Todas",listLine==="Todas","listLine='Todas';render()")}${allLines.map(l=>chip(l,listLine===l,`listLine='${l.replace(/'/g,"\\'")}';render()`)).join("")}</div>
-  <div style="margin:6px 14px 0;font-size:12px;color:${C.gray}">${fil.length} produto(s)</div>
-  ${fil.map(p=>{
+  <div class="chip-row">
+    <select class="field-sel" onchange="listLine=this.value;render()">
+      <option value="Todas"${listLine==="Todas"?" selected":""}>Todas as linhas</option>
+      ${allLines.map(l=>`<option value="${l}"${listLine===l?" selected":""}>${l}</option>`).join("")}
+    </select>
+  </div>
+  <div id="listCount" style="margin:6px 14px 0;font-size:12px;color:${C.gray}">${fil.length} produto(s)</div>
+  <div id="productList">${fil.map(p=>{
     const low=p.min_qty>0&&p.quantity<=p.min_qty;const ac=p.avg_cost||0;const sp=p.sale_price||0;
     const marg=sp>0?((sp-ac)/sp)*100:null;const g=grp(p);
     return`<div class="card" style="border-left:3px solid ${low?C.red:C.pink}">
@@ -528,7 +578,7 @@ function buildList(){
         </div>
       </div>
     </div>`;
-  }).join("")}`;
+  }).join("")}</div>`;
 }
 
 function buildForm(){
@@ -540,7 +590,11 @@ function buildForm(){
         <div>${lbl("Grupo")}<select id="f_group" class="field-sel">${GROUPS.map(g=>`<option value="${g}"${(fd.group||"Men")===g?" selected":""}>${g}</option>`).join("")}</select></div>
       </div>
       <div style="margin-bottom:12px">${lbl("Nome *")}<input id="f_name" class="field-inp" value="${(fd.name||"").replace(/"/g,"&quot;")}" autocomplete="off"/></div>
-      <div style="margin-bottom:12px">${lbl("Linha")}<select id="f_line" class="field-sel"><option value="">Sem linha</option>${allLines.map(l=>`<option value="${l}"${fd.line===l?" selected":""}>${l}</option>`).join("")}</select></div>
+      <div style="margin-bottom:12px">${lbl("Linha")}
+      <input id="f_line" class="field-inp" list="lines_list" placeholder="Digite ou escolha uma linha..." value="${fd.line||""}" autocomplete="off"/>
+      <datalist id="lines_list">${allLines.map(l=>`<option value="${l}">`).join("")}</datalist>
+      <div style="font-size:11px;color:#6B7280;margin-top:3px">Digite o nome de uma linha nova ou escolha uma existente</div>
+    </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div>${lbl("Info adicional")}<input id="f_info" class="field-inp" value="${(fd.info||"").replace(/"/g,"&quot;")}" autocomplete="off"/></div>
         <div>${lbl("Qtd. mínima")}<input id="f_minQty" class="field-inp" type="number" inputmode="numeric" value="${fd.minQty||fd.min_qty||""}"/></div>
@@ -595,16 +649,254 @@ function buildMov(){
   </div>`;
 }
 
+
+// ── EXPORT ──
+function exportExcel(){
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Estoque Atual
+  const estRows = [["Codigo","Grupo","Linha","Produto","Info","Custo Medio","Preco Venda","Estoque Atual","Valor em Estoque","Qtd Minima"]];
+  products.forEach(p=>{
+    const val = (p.quantity||0)*(p.avg_cost||0);
+    estRows.push([p.code,grp(p),p.line||"",p.name,p.info||"",
+      p.avg_cost||0, p.sale_price||0, p.quantity||0, val, p.min_qty||0]);
+  });
+  const ws1 = XLSX.utils.aoa_to_sheet(estRows);
+  ws1["!cols"] = [{wch:10},{wch:8},{wch:25},{wch:35},{wch:18},{wch:13},{wch:13},{wch:13},{wch:16},{wch:11}];
+  XLSX.utils.book_append_sheet(wb, ws1, "Estoque Atual");
+
+  // Sheet 2: Entradas
+  const entRows = [["Data","Codigo","Grupo","Linha","Produto","Qtd","Custo Unit.","Total Compra","Obs"]];
+  history.filter(h=>h.type==="entrada").forEach(h=>{
+    entRows.push([h.date,h.code,h.grp||"",h.line||"",h.name,h.qty,h.unit_cost||0,h.total_cost||0,h.note||""]);
+  });
+  const ws2 = XLSX.utils.aoa_to_sheet(entRows);
+  ws2["!cols"] = [{wch:12},{wch:10},{wch:8},{wch:25},{wch:35},{wch:8},{wch:13},{wch:13},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, ws2, "Entradas");
+
+  // Sheet 3: Saidas
+  const saiRows = [["Data","Codigo","Grupo","Linha","Produto","Qtd","Preco Venda","Total Venda","CMV","Lucro","Margem%","Categoria","Obs"]];
+  history.filter(h=>h.type==="saida").forEach(h=>{
+    const lucro=(h.total_sale||0)-(h.total_cost||0);
+    const marg=(h.total_sale||0)>0?lucro/(h.total_sale||0)*100:0;
+    saiRows.push([h.date,h.code,h.grp||"",h.line||"",h.name,h.qty,h.unit_sale||0,h.total_sale||0,h.total_cost||0,lucro,marg.toFixed(1)+"%",h.category||"",h.note||""]);
+  });
+  const ws3 = XLSX.utils.aoa_to_sheet(saiRows);
+  ws3["!cols"] = [{wch:12},{wch:10},{wch:8},{wch:25},{wch:35},{wch:8},{wch:13},{wch:13},{wch:13},{wch:13},{wch:9},{wch:12},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, ws3, "Saidas");
+
+  const date = new Date().toLocaleDateString("pt-BR").split("/").join("-");
+  XLSX.writeFile(wb, "Estoque_Grazi_"+date+".xlsx");
+  toast("Excel exportado!");
+}
+
+function exportPDF(){
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF({orientation:"portrait", unit:"mm", format:"a4"});
+  const PINK = [212,82,122], DARK = [30,27,46], GRAY = [107,114,128], GREEN=[16,185,129], RED=[239,68,68], GOLD=[201,168,76], WHITE=[255,255,255];
+  const W = doc.internal.pageSize.getWidth();
+  const now = new Date().toLocaleDateString("pt-BR",{day:"2-digit",month:"long",year:"numeric"});
+  let y = 0;
+
+  function addPage(){
+    doc.addPage();
+    y = 18;
+    // header bar
+    doc.setFillColor(...PINK);
+    doc.rect(0,0,W,12,"F");
+    doc.setFontSize(8); doc.setTextColor(...WHITE);
+    doc.text("Estoque Grazi — Relatorio de Estoque", 14, 8);
+    doc.text(now, W-14, 8, {align:"right"});
+    y = 20;
+  }
+
+  function checkY(need=30){if(y+need>270)addPage();}
+
+  function sectionTitle(text, color=DARK){
+    checkY(16);
+    doc.setFillColor(...color);
+    doc.roundedRect(14, y, W-28, 10, 2, 2, "F");
+    doc.setFontSize(11); doc.setFont("helvetica","bold"); doc.setTextColor(...WHITE);
+    doc.text(text, 20, y+7);
+    y += 16;
+  }
+
+  function kpiRow(items){
+    checkY(22);
+    const colW = (W-28)/items.length;
+    items.forEach(([label,value,color],i)=>{
+      const x = 14 + i*colW;
+      doc.setFillColor(245,245,245);
+      doc.roundedRect(x, y, colW-3, 18, 2, 2, "F");
+      doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(...GRAY);
+      doc.text(label, x+4, y+6);
+      doc.setFontSize(11); doc.setFont("helvetica","bold"); doc.setTextColor(...color);
+      doc.text(String(value), x+4, y+14);
+    });
+    y += 24;
+  }
+
+  function autoTbl(head, body, colStyles={}){
+    checkY(20);
+    doc.autoTable({
+      startY: y,
+      head: [head],
+      body: body,
+      margin:{left:14,right:14},
+      styles:{fontSize:8, cellPadding:3, valign:"middle"},
+      headStyles:{fillColor:DARK, textColor:WHITE, fontStyle:"bold", fontSize:8},
+      alternateRowStyles:{fillColor:[249,249,249]},
+      columnStyles: colStyles,
+      didDrawPage: (d)=>{ y = d.cursor.y + 6; },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  // ── CAPA ──
+  doc.setFillColor(...PINK);
+  doc.rect(0,0,W,50,"F");
+  doc.setFontSize(22); doc.setFont("helvetica","bold"); doc.setTextColor(...WHITE);
+  doc.text("Relatorio de Estoque", W/2, 22, {align:"center"});
+  doc.setFontSize(11); doc.setFont("helvetica","normal");
+  doc.text("Estoque Grazi", W/2, 32, {align:"center"});
+  doc.setFontSize(9); doc.setTextColor(249,200,215);
+  doc.text("Gerado em "+now, W/2, 40, {align:"center"});
+  y = 62;
+
+  // KPIs gerais
+  const totI = products.reduce((s,p)=>s+(p.quantity||0),0);
+  const totV = products.reduce((s,p)=>s+(p.quantity||0)*(p.avg_cost||0),0);
+  const allSai = history.filter(h=>h.type==="saida");
+  const allEnt = history.filter(h=>h.type==="entrada");
+  const totRec = allSai.reduce((s,h)=>s+(h.total_sale||0),0);
+  const totCMV = allSai.reduce((s,h)=>s+(h.total_cost||0),0);
+  const totLuc = totRec - totCMV;
+  const marg = totRec>0?(totLuc/totRec*100):0;
+  const totComp = allEnt.reduce((s,h)=>s+(h.total_cost||0),0);
+
+  kpiRow([
+    ["Total Produtos", products.length, DARK],
+    ["Total Itens", totI, DARK],
+    ["Valor em Estoque", "R$ "+fmt(totV), GOLD],
+  ]);
+  kpiRow([
+    ["Receita Total", "R$ "+fmt(totRec), GREEN],
+    ["Lucro Total", "R$ "+fmt(totLuc), GREEN],
+    ["Margem Bruta", pct(marg), marg>=30?GREEN:RED],
+  ]);
+  kpiRow([
+    ["Total Compras", "R$ "+fmt(totComp), DARK],
+    ["Entradas (mov)", allEnt.length, DARK],
+    ["Saidas (mov)", allSai.length, DARK],
+  ]);
+
+  // TOP 10 MAIOR ESTOQUE QTD
+  sectionTitle("Top 10 — Maiores Estoques em Quantidade");
+  const byQty = [...products].filter(p=>p.quantity>0).sort((a,b)=>b.quantity-a.quantity).slice(0,10);
+  autoTbl(
+    ["#","Codigo","Produto","Grupo","Linha","Qtd"],
+    byQty.map((p,i)=>["#"+(i+1), p.code, p.name, grp(p), p.line||"—", p.quantity]),
+    {0:{cellWidth:12},1:{cellWidth:18},2:{cellWidth:56},3:{cellWidth:16},4:{cellWidth:33},5:{cellWidth:14,halign:"right"}}
+  );
+
+  // TOP 10 MAIOR ESTOQUE VALOR
+  sectionTitle("Top 10 — Maiores Estoques em Valor (R$)");
+  const byVal = [...products].filter(p=>p.quantity>0).sort((a,b)=>(b.quantity*(b.avg_cost||0))-(a.quantity*(a.avg_cost||0))).slice(0,10);
+  autoTbl(
+    ["#","Codigo","Produto","Grupo","Qtd","Custo Med.","Valor Total"],
+    byVal.map((p,i)=>["#"+(i+1), p.code, p.name, grp(p), p.quantity, "R$ "+fmt(p.avg_cost||0), "R$ "+fmt(p.quantity*(p.avg_cost||0))]),
+    {0:{cellWidth:12},1:{cellWidth:16},2:{cellWidth:50},3:{cellWidth:14},4:{cellWidth:12,halign:"right"},5:{cellWidth:22,halign:"right"},6:{cellWidth:23,halign:"right"}}
+  );
+
+  // TOP 10 MENOR ESTOQUE QTD
+  sectionTitle("Top 10 — Menores Estoques em Quantidade", [180,50,50]);
+  const byQtyAsc = [...products].filter(p=>p.code).sort((a,b)=>a.quantity-b.quantity).slice(0,10);
+  autoTbl(
+    ["#","Codigo","Produto","Grupo","Linha","Qtd"],
+    byQtyAsc.map((p,i)=>["#"+(i+1), p.code, p.name, grp(p), p.line||"—", p.quantity]),
+    {0:{cellWidth:12},1:{cellWidth:18},2:{cellWidth:56},3:{cellWidth:16},4:{cellWidth:33},5:{cellWidth:14,halign:"right"}}
+  );
+
+  // TOP 10 MENOR ESTOQUE VALOR
+  sectionTitle("Top 10 — Menores Estoques em Valor (R$)", [180,50,50]);
+  const byValAsc = [...products].filter(p=>p.code).sort((a,b)=>(a.quantity*(a.avg_cost||0))-(b.quantity*(b.avg_cost||0))).slice(0,10);
+  autoTbl(
+    ["#","Codigo","Produto","Grupo","Qtd","Custo Med.","Valor Total"],
+    byValAsc.map((p,i)=>["#"+(i+1), p.code, p.name, grp(p), p.quantity, "R$ "+fmt(p.avg_cost||0), "R$ "+fmt(p.quantity*(p.avg_cost||0))]),
+    {0:{cellWidth:12},1:{cellWidth:16},2:{cellWidth:50},3:{cellWidth:14},4:{cellWidth:12,halign:"right"},5:{cellWidth:22,halign:"right"},6:{cellWidth:23,halign:"right"}}
+  );
+
+  // TOP 10 PRODUTOS MAIS LUCRATIVOS
+  sectionTitle("Top 10 — Produtos Mais Lucrativos", [16,100,80]);
+  const byProd={};
+  allSai.forEach(h=>{
+    if(!byProd[h.product_id])byProd[h.product_id]={name:h.name,code:h.code,grp:h.grp||"",r:0,c:0,q:0};
+    byProd[h.product_id].r+=(h.total_sale||0);
+    byProd[h.product_id].c+=(h.total_cost||0);
+    byProd[h.product_id].q+=h.qty;
+  });
+  const rank=Object.values(byProd).map(p=>({...p,lucro:p.r-p.c,marg:p.r>0?(p.r-p.c)/p.r*100:0})).sort((a,b)=>b.lucro-a.lucro).slice(0,10);
+  autoTbl(
+    ["#","Cod.","Produto","Grp","Qtd","Receita","CMV","Lucro","Marg."],
+    rank.map((p,i)=>["#"+(i+1),p.code,p.name,p.grp,p.q,"R$ "+fmt(p.r),"R$ "+fmt(p.c),"R$ "+fmt(p.lucro),p.marg.toFixed(1)+"%"]),
+    {0:{cellWidth:12},1:{cellWidth:14},2:{cellWidth:48},3:{cellWidth:10},4:{cellWidth:10,halign:"right"},5:{cellWidth:22,halign:"right"},6:{cellWidth:20,halign:"right"},7:{cellWidth:20,halign:"right"},8:{cellWidth:13,halign:"right"}}
+  );
+
+  // ESTOQUE COMPLETO
+  sectionTitle("Relacao Completa do Estoque");
+  autoTbl(
+    ["Codigo","Produto","Grupo","Linha","Custo Med.","Pr. Venda","Qtd","Valor Est."],
+    products.filter(p=>p.code).map(p=>[p.code,p.name,grp(p),p.line||"","R$ "+fmt(p.avg_cost||0),"R$ "+fmt(p.sale_price||0),p.quantity,"R$ "+fmt((p.quantity||0)*(p.avg_cost||0))]),
+    {0:{cellWidth:14},1:{cellWidth:52},2:{cellWidth:12},3:{cellWidth:28},4:{cellWidth:20,halign:"right"},5:{cellWidth:18,halign:"right"},6:{cellWidth:10,halign:"right"},7:{cellWidth:20,halign:"right"}}
+  );
+
+  const date = new Date().toLocaleDateString("pt-BR").split("/").join("-");
+  doc.save("Relatorio_Grazi_"+date+".pdf");
+  toast("PDF exportado!");
+}
+
 function buildReport(){
   const fh=filtHist();const sai=fh.filter(h=>h.type==="saida"),ent=fh.filter(h=>h.type==="entrada");
   const totR=sai.reduce((s,h)=>s+(h.total_sale||0),0),totC=sai.reduce((s,h)=>s+(h.total_cost||0),0);
   const totComp=ent.reduce((s,h)=>s+(h.total_cost||0),0);
   const lucro=totR-totC,marg=totR>0?(lucro/totR)*100:0;
   const totEst=products.reduce((s,p)=>s+p.quantity*(p.avg_cost||0),0);
-  const byCat={};sai.forEach(h=>{const c=h.category||"Venda";if(!byCat[c])byCat[c]={r:0,c:0,q:0};byCat[c].r+=(h.total_sale||0);byCat[c].c+=(h.total_cost||0);byCat[c].q+=h.qty;});
   const byP={};sai.forEach(h=>{if(!byP[h.product_id])byP[h.product_id]={name:h.name,code:h.code,grp:h.grp||"",r:0,c:0,q:0};byP[h.product_id].r+=(h.total_sale||0);byP[h.product_id].c+=(h.total_cost||0);byP[h.product_id].q+=h.qty;});
   const rank=Object.values(byP).map(p=>({...p,lucro:p.r-p.c,marg:p.r>0?((p.r-p.c)/p.r)*100:0})).sort((a,b)=>b.lucro-a.lucro);
-  return`${filterBar()}
+  const byCat={};sai.forEach(h=>{const c=h.category||"Venda";if(!byCat[c])byCat[c]={r:0,c:0,q:0};byCat[c].r+=(h.total_sale||0);byCat[c].c+=(h.total_cost||0);byCat[c].q+=h.qty;});
+
+  function topByCat(cat){
+    const acc={};
+    sai.filter(h=>h.category===cat).forEach(h=>{
+      if(!acc[h.product_id])acc[h.product_id]={name:h.name,code:h.code,grp:h.grp||"",q:0,r:0};
+      acc[h.product_id].q+=h.qty; acc[h.product_id].r+=(h.total_sale||0);
+    });
+    return Object.values(acc).sort((a,b)=>b.q-a.q).slice(0,10);
+  }
+
+  function catSection(cat){
+    const items=topByCat(cat);
+    const empty=`<div class="card" style="text-align:center;color:${C.gray};font-size:13px;padding:16px">Ainda nao ha registros de saidas em ${cat}</div>`;
+    const rows=items.map((p,i)=>`<div class="card"><div style="display:flex;align-items:center;gap:8px">
+      <div style="font-size:15px;font-weight:800;color:${i===0?C.gold:C.gray};min-width:24px">#${i+1}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div>
+        <div style="font-size:11px;color:${C.gray}">[${p.code}] · ${p.grp}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:15px;font-weight:800;color:${C.pink}">${p.q} un</div>
+        ${p.r>0?`<div style="font-size:11px;color:${C.green}">R$ ${fmt(p.r)}</div>`:""}
+      </div>
+    </div></div>`).join("");
+    return `<div style="font-size:11px;font-weight:700;color:${C.gray};text-transform:uppercase;margin:18px 14px 4px">Top 10 por Categoria — ${cat}</div>${items.length===0?empty:rows}`;
+  }
+
+  return`
+  <div style="display:flex;gap:8px;margin:12px 14px 0">
+    <button onclick="exportPDF()" style="flex:1;background:linear-gradient(135deg,${C.pink},${C.pinkD});color:#fff;border:none;border-radius:12px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Exportar PDF</button>
+    <button onclick="exportExcel()" style="flex:1;background:linear-gradient(135deg,#10B981,#059669);color:#fff;border:none;border-radius:12px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Exportar Excel</button>
+  </div>
+  ${filterBar()}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 14px 0">
     ${kpi(C.greenL,C.green,"R$ "+fmt(totR),C.green,"Receita bruta")}${kpi(C.redL,C.red,"R$ "+fmt(totC),C.red,"CMV")}
   </div>
@@ -614,11 +906,20 @@ function buildReport(){
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 14px 0">
     ${kpi(C.blueL,C.blue,"R$ "+fmt(totComp),C.blue,"Total compras")}${kpi(C.goldL,C.gold,"R$ "+fmt(totEst),C.gold,"Estoque (custo)")}
   </div>
-  ${Object.keys(byCat).length>0?`<div style="font-size:11px;font-weight:700;color:${C.gray};text-transform:uppercase;margin:18px 14px 4px">📂 Por categoria</div>
+  ${Object.keys(byCat).length>0?`<div style="font-size:11px;font-weight:700;color:${C.gray};text-transform:uppercase;margin:18px 14px 4px">Por categoria</div>
     ${Object.entries(byCat).map(([cat,d])=>`<div class="card"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1"><div style="font-size:14px;font-weight:700">${cat}</div><div style="font-size:12px;color:${C.gray}">${d.q} itens · CMV: R$ ${fmt(d.c)}</div></div><div style="font-size:15px;font-weight:800;color:${C.green}">R$ ${fmt(d.r)}</div></div></div>`).join("")}`:""}
-  ${rank.length>0?`<div style="font-size:11px;font-weight:700;color:${C.gray};text-transform:uppercase;margin:18px 14px 4px">🏆 Ranking por produto</div>
-    ${rank.slice(0,20).map((p,i)=>`<div class="card"><div style="display:flex;align-items:center;gap:8px"><div style="font-size:16px;font-weight:800;color:${i===0?C.gold:C.gray};min-width:24px">#${i+1}</div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div><div style="font-size:11px;color:${C.gray}">[${p.code}] · ${p.grp} · ${p.q} vendidos</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:800;color:${p.lucro>=0?C.green:C.red}">R$ ${fmt(p.lucro)}</div>${badge(p.marg)}</div></div></div>`).join("")}`:""}`;
+  <div style="font-size:11px;font-weight:700;color:${C.gray};text-transform:uppercase;margin:18px 14px 4px">Top 10 Produtos Mais Lucrativos</div>
+  ${rank.length===0
+    ? `<div class="card" style="text-align:center;color:${C.gray};font-size:13px;padding:20px">Ainda nao ha registros de saidas</div>`
+    : rank.slice(0,10).map((p,i)=>`<div class="card"><div style="display:flex;align-items:center;gap:8px"><div style="font-size:15px;font-weight:800;color:${i===0?C.gold:C.gray};min-width:24px">#${i+1}</div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div><div style="font-size:11px;color:${C.gray}">[${p.code}] · ${p.grp} · ${p.q} vendidos</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:800;color:${p.lucro>=0?C.green:C.red}">R$ ${fmt(p.lucro)}</div>${badge(p.marg)}</div></div></div>`).join("")
+  }
+  ${catSection("Venda")}
+  ${catSection("Perdas")}
+  ${catSection("Amostras")}
+  ${catSection("Brindes")}
+  `;
 }
+
 
 function buildHistory(){
   const fh=filtHist();
