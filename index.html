@@ -244,6 +244,15 @@ async function saveMov(m){
     unit_cost:m.unit_cost||0,total_cost:m.total_cost||0,unit_sale:m.unit_sale||null,
     total_sale:m.total_sale||null,note:m.note||"",date:m.date});
 }
+async function reloadProducts(){
+  const{data,error}=await db.from("products").select("*").order("id");
+  if(!error&&data&&data.length>0){
+    products=data;
+    const lset=new Set(products.map(p=>p.line).filter(Boolean));
+    allLines=[...ALL_LINES_DEFAULT,...lset].filter((v,i,a)=>a.indexOf(v)===i).sort();
+  }
+}
+
 function subscribeRealtime(){
   db.channel("estoque-grazi")
     .on("postgres_changes",{event:"*",schema:"public",table:"products"},pl=>{
@@ -307,7 +316,7 @@ async function handleXlsx(input){
           const r=rows[i];if(!r[0]||!r[3])continue;
           const code=String(r[2]||"").trim(),g=String(r[0]||"").trim(),name=String(r[3]||"").trim(),line=String(r[1]||"").trim(),info=String(r[4]||"").trim();
           const ex=products.find(p=>p.code===code&&grp(p)===g);
-          if(!ex){const newP={id:Date.now()+Math.random(),code,name,line,grp:g,info,quantity:0,avg_cost:0,cost_price:0,sale_price:0,min_qty:0};products.push(newP);await saveProd(newP);np++;if(line&&!allLines.includes(line)){allLines.push(line);allLines.sort();}}
+          if(!ex){const newP={id:Date.now()*1000+Math.floor(Math.random()*1000),code,name,line,grp:g,info,quantity:0,avg_cost:0,cost_price:0,sale_price:0,min_qty:0};products.push(newP);await saveProd(newP);np++;if(line&&!allLines.includes(line)){allLines.push(line);allLines.sort();}}
           else{ex.name=name;ex.line=line;ex.info=info;await saveProd(ex);nu++;}
         }
       }
@@ -319,7 +328,7 @@ async function handleXlsx(input){
           const qty=parseFloat(r[5]||0),uc=parseFloat(r[6]||0);if(!qty)continue;
           const prod=products.find(p=>p.code===code&&grp(p)===g)||products.find(p=>p.code===code);
           if(prod){const tq=prod.quantity+qty;prod.avg_cost=R2(tq>0?((prod.quantity*(prod.avg_cost||0))+(qty*uc))/tq:uc);prod.quantity=tq;prod.cost_price=uc;await saveProd(prod);
-            const m={id:Date.now()+Math.random(),product_id:prod.id,code:prod.code,name:prod.name,line:prod.line||"",grp:grp(prod),type:"entrada",category:"Compra",qty,unit_cost:R2(uc),total_cost:R2(uc*qty),unit_sale:null,total_sale:null,note:"📥 Importado",date:xlDate(r[7])};
+            const m={id:Date.now()*1000+Math.floor(Math.random()*1000),product_id:prod.id,code:prod.code,name:prod.name,line:prod.line||"",grp:grp(prod),type:"entrada",category:"Compra",qty,unit_cost:R2(uc),total_cost:R2(uc*qty),unit_sale:null,total_sale:null,note:"📥 Importado",date:xlDate(r[7])};
             history.unshift(m);await saveMov(m);nm++;}
         }
       }
@@ -331,7 +340,7 @@ async function handleXlsx(input){
           const qty=parseFloat(r[5]||0),us=parseFloat(r[6]||0),cat=String(r[7]||"Venda").trim();if(!qty)continue;
           const prod=products.find(p=>p.code===code&&grp(p)===g)||products.find(p=>p.code===code);
           if(prod&&prod.quantity>=qty){const uc=prod.avg_cost||0;prod.quantity=Math.max(0,prod.quantity-qty);if(us>0&&!prod.sale_price)prod.sale_price=us;await saveProd(prod);
-            const m={id:Date.now()+Math.random(),product_id:prod.id,code:prod.code,name:prod.name,line:prod.line||"",grp:grp(prod),type:"saida",category:EXIT_CATS.includes(cat)?cat:"Venda",qty,unit_cost:R2(uc),total_cost:R2(uc*qty),unit_sale:us?R2(us):null,total_sale:us?R2(us*qty):null,note:"📤 Importado",date:xlDate(r[8])};
+            const m={id:Date.now()*1000+Math.floor(Math.random()*1000),product_id:prod.id,code:prod.code,name:prod.name,line:prod.line||"",grp:grp(prod),type:"saida",category:EXIT_CATS.includes(cat)?cat:"Venda",qty,unit_cost:R2(uc),total_cost:R2(uc*qty),unit_sale:us?R2(us):null,total_sale:us?R2(us*qty):null,note:"📤 Importado",date:xlDate(r[8])};
             history.unshift(m);await saveMov(m);nm++;}
         }
       }
@@ -355,7 +364,7 @@ async function saveProduct(){
   if(fd.id){products=products.map(p=>p.id===fd.id?{...p,...base}:p);await saveProd(products.find(p=>p.id===fd.id));toast("Atualizado!");}
   else{
     if(products.find(p=>p.code===base.code&&grp(p)===base.grp)){toast("Código já existe!","err");return;}
-    const newP={...base,id:Date.now(),quantity:0,avg_cost:base.cost_price||0};
+    const newP={...base,id:Date.now()*1000+Math.floor(Math.random()*1000),quantity:0,avg_cost:base.cost_price||0};
     products.push(newP);await saveProd(newP);toast("Adicionado!");
     if(afterSaveCb){const cb=afterSaveCb;afterSaveCb=null;mov.productId=newP.id;cb(newP.id);go("movement");return;}
   }
@@ -392,10 +401,12 @@ async function registerMov(){
   if(mov.type==="entrada"){const tq=p.quantity+qty;products[idx]={...p,quantity:tq,avg_cost:R2(tq>0?((p.quantity*(p.avg_cost||0))+(qty*uc))/tq:uc),cost_price:uc};}
   else{products[idx]={...p,quantity:Math.max(0,p.quantity-qty)};}
   await saveProd(products[idx]);
-  const m={id:Date.now(),product_id:p.id,code:p.code,name:p.name,line:p.line||"",grp:grp(p),type:mov.type,
+  const m={id:Date.now()*1000+Math.floor(Math.random()*1000),product_id:p.id,code:p.code,name:p.name,line:p.line||"",grp:grp(p),type:mov.type,
     category:mov.type==="saida"?cat:"Compra",qty,unit_cost:R2(uc),total_cost:R2(uc*qty),
     unit_sale:us?R2(us):null,total_sale:us?R2(us*qty):null,note,date:mov.date};
   history.unshift(m);sortHist();await saveMov(m);
+  // Reload from DB to ensure all numbers are consistent
+  await reloadProducts();
   toast(mov.type==="entrada"?"✅ Entrada registrada!":"✅ Saída registrada!");
   mov={productId:null,type:"entrada",exitCat:"Venda",date:todayStr()};go("list");
 }
@@ -418,6 +429,7 @@ async function confirmDeleteMov(){
   }
   history.splice(hidx,1);
   await db.from("movements").delete().eq("id",id);
+  await reloadProducts();
   render();toast("✅ Removida! Estoque atualizado.");
 }
 
@@ -651,7 +663,8 @@ function buildMov(){
 
 
 // ── EXPORT ──
-function exportExcel(){
+async function exportExcel(){
+  await reloadProducts();
   const wb = XLSX.utils.book_new();
 
   // Sheet 1: Estoque Atual
@@ -690,7 +703,8 @@ function exportExcel(){
   toast("Excel exportado!");
 }
 
-function exportPDF(){
+async function exportPDF(){
+  await reloadProducts();
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({orientation:"portrait", unit:"mm", format:"a4"});
   const PINK = [212,82,122], DARK = [30,27,46], GRAY = [107,114,128], GREEN=[16,185,129], RED=[239,68,68], GOLD=[201,168,76], WHITE=[255,255,255];
