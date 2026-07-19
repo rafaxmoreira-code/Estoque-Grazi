@@ -465,7 +465,7 @@ function renderFilteredList(){
       ? `<div class="card" style="text-align:center;color:${C.gray};font-size:13px;padding:20px">Nenhuma movimentacao encontrada</div>`
       : fh.map(h=>`<div class="card">
         <div style="display:flex;align-items:center;gap:8px">
-          <div style="font-size:17px">${h.type==="entrada"?"IN":"OUT"}</div>
+          <div style="font-size:17px">${h.type==="entrada"?"📥":"📤"}</div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.name}</div>
             <div style="font-size:11px;color:${C.gray}">${h.date} · [${h.code}] · ${h.grp||""}${h.category?" · "+h.category:""}</div>
