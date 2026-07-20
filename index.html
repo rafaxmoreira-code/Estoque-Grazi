@@ -408,7 +408,8 @@ async function registerMov(){
   // Reload from DB to ensure all numbers are consistent
   await reloadProducts();
   toast(mov.type==="entrada"?"✅ Entrada registrada!":"✅ Saída registrada!");
-  mov={productId:null,type:"entrada",exitCat:"Venda",date:todayStr()};go("list");
+  mov={productId:null,type:mov.type,exitCat:"Venda",date:todayStr()};
+  render();
 }
 
 // ── DELETE MOV ──
@@ -448,6 +449,105 @@ function filtHist(){
   });
 }
 function setRf(k,v){rf[k]=v;render();}
+
+// ── SLICER STATE ──
+if(!window._slicerOpen)window._slicerOpen={};
+if(!window._slicerQ)window._slicerQ={};
+if(!window._rfSel)window._rfSel={group:[],type:[],exitCat:[],line:[],productId:[]};
+
+function slicerToggle(id, val, label){
+  if(!window._slicerOpen)window._slicerOpen={};
+  if(!window._rfSel)window._rfSel={group:[],type:[],exitCat:[],line:[],productId:[]};
+  if(val===undefined){
+    // toggle open/close - only render() here since it changes layout
+    window._slicerOpen[id]=!window._slicerOpen[id];
+    render();
+    if(window._slicerOpen[id]){
+      setTimeout(()=>{const el=document.getElementById("slcq_"+id);if(el)el.focus();},50);
+    }
+    return;
+  }
+  if(val==="__all__"){
+    window._rfSel[id]=[];
+    applySlicerToRf();
+    const scrollY=window.scrollY;
+    render();
+    window.scrollTo(0,scrollY);
+    setTimeout(()=>{const el=document.getElementById("slcq_"+id);if(el)el.focus();},20);
+    return;
+  }
+  const arr=window._rfSel[id]||[];
+  const idx=arr.indexOf(val);
+  if(idx>=0)arr.splice(idx,1);else arr.push(val);
+  window._rfSel[id]=arr;
+  applySlicerToRf();
+  // Save scroll position and re-render
+  const scrollY=window.scrollY;
+  render();
+  window.scrollTo(0,scrollY);
+  // Re-focus search if open
+  setTimeout(()=>{const el=document.getElementById("slcq_"+id);if(el){el.focus();}},20);
+}
+
+function updateSlicerUI(id){
+  // Update the selected label text without full re-render
+  const labelEl=document.getElementById("slc_label_"+id);
+  const sel=window._rfSel&&window._rfSel[id]?window._rfSel[id]:[];
+  const allSel=sel.length===0;
+  if(labelEl) labelEl.textContent=allSel?"Todos":sel.join(", ");
+  // Update checkboxes in the list
+  const listEl=document.getElementById("slc_list_"+id);
+  if(listEl){
+    listEl.querySelectorAll("[data-slcval]").forEach(el=>{
+      const v=el.dataset.slcval;
+      const isSel=!allSel&&sel.includes(v);
+      const box=el.querySelector(".slc-box");
+      const chk=el.querySelector(".slc-chk");
+      if(box){box.style.borderColor=isSel?C.pink:C.border;box.style.background=isSel?C.pink:"#fff";}
+      if(chk){chk.style.display=isSel?"flex":"none";}
+      el.style.background=isSel?C.pinkL:"#fff";
+    });
+  }
+  // Update count
+  const countEl=document.getElementById("flt_count");
+  if(countEl) countEl.textContent=filtHist().length+" registros";
+}
+function slicerSearch(id,q){
+  if(!window._slicerQ)window._slicerQ={};
+  window._slicerQ[id]=q;
+  // Only re-render the dropdown list, not the whole page
+  const listEl=document.getElementById("slc_list_"+id);
+  if(!listEl){render();return;}
+  const sel=window._rfSel&&window._rfSel[id]?window._rfSel[id]:[];
+  const allSel=sel.length===0;
+  let options=[];
+  if(id==="group") options=[{v:"Men",l:"Men"},{v:"Woman",l:"Woman"}];
+  else if(id==="type") options=[{v:"entrada",l:"Entradas"},{v:"saida",l:"Saidas"}];
+  else if(id==="exitCat") options=EXIT_CATS.map(c=>({v:c,l:c}));
+  else if(id==="line") options=allLines.map(l=>({v:l,l:l}));
+  else if(id==="productId") options=products.map(p=>({v:String(p.id),l:"["+p.code+"] "+p.name}));
+  const filtered=q?options.filter(o=>o.l.toLowerCase().includes(q.toLowerCase())):options;
+  listEl.innerHTML=filtered.map(o=>{
+    const isSel=!allSel&&sel.includes(o.v);
+    return `<div onclick="slicerToggle('${id}','${o.v.replace(/'/g,"\'")}','${o.l.replace(/'/g,"\'")}')" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid #F9F9F9;background:${isSel?C.pinkL:'#fff'}">
+      <div style="width:16px;height:16px;border-radius:4px;border:2px solid ${isSel?C.pink:C.border};background:${isSel?C.pink:'#fff'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        ${isSel?'<span style="color:#fff;font-size:10px;font-weight:800">v</span>':""}
+      </div>
+      <span style="font-size:12px;color:${C.dark};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.l}</span>
+    </div>`;
+  }).join("");
+  // Keep focus on search input
+  const inp=document.getElementById("slcq_"+id);
+  if(inp){inp.focus();inp.setSelectionRange(q.length,q.length);}
+}
+function applySlicerToRf(){
+  const sel=window._rfSel||{};
+  rf.group=(sel.group&&sel.group.length)?sel.group[0]:"Todos";
+  rf.type=(sel.type&&sel.type.length)?sel.type[0]:"todos";
+  rf.exitCat=(sel.exitCat&&sel.exitCat.length)?sel.exitCat[0]:"Todas";
+  rf.line=(sel.line&&sel.line.length)?sel.line[0]:"Todas";
+  rf.productId=(sel.productId&&sel.productId.length)?sel.productId[0]:"";
+}
 function updateFilterCount(){
   const el=document.getElementById("flt_count");
   if(el) el.textContent=filtHist().length+" registros";
@@ -490,7 +590,13 @@ function renderFilteredList(){
     render();
   }
 }
-function clearRf(){rf={dateFrom:"",dateTo:"",line:"Todas",group:"Todos",productId:"",code:"",type:"todos",exitCat:"Todas"};render();}
+function clearRf(){
+  rf={dateFrom:"",dateTo:"",line:"Todas",group:"Todos",productId:"",code:"",type:"todos",exitCat:"Todas"};
+  window._rfSel={group:[],type:[],exitCat:[],line:[],productId:[]};
+  window._slicerOpen={};
+  window._slicerQ={};
+  render();
+}
 
 // ── CORES ──
 const C={pink:"#D4527A",pinkL:"#F9E8EF",pinkD:"#A33D5E",gold:"#C9A84C",goldL:"#FBF5E6",dark:"#1E1B2E",gray:"#6B7280",grayL:"#F3F4F6",border:"#E5E7EB",green:"#10B981",greenL:"#ECFDF5",red:"#EF4444",redL:"#FEF2F2",blue:"#3B82F6",blueL:"#EFF6FF"};
@@ -501,77 +607,83 @@ function lbl(t){return`<label style="font-size:12px;font-weight:600;color:${C.gr
 
 function filterBar(){
   const fh=filtHist();
-  // Searchable select helper: renders an input with datalist
-  function srchSel(id, val, options, placeholder, onchangeFn){
-    const opts = options.map(o=>`<option value="${o.v}">${o.l}</option>`).join("");
-    return `<div style="position:relative">
-      <input id="flt_${id}" class="field-inp" list="dl_${id}" value="${val}" placeholder="${placeholder}"
-        autocomplete="off" autocorrect="off"
-        onchange="(function(){var v=document.getElementById('flt_${id}').value;var match=window._fltOpts_${id}.find(o=>o.l===v||o.v===v);if(match||v===''){${onchangeFn.replace(/"/g,"'")}(match?match.v:'');}})()"
-        oninput="(function(){var v=this.value;if(v===''||v==='Todos'||v==='Todas'){${onchangeFn.replace(/"/g,"'")}('');}})(this)"
-      />
-      <datalist id="dl_${id}">${opts}</datalist>
+
+  function slicer(id, label, options, selectedVals, onToggle, onSearch){
+    const sid="slc_"+id;
+    const open=window._slicerOpen&&window._slicerOpen[id];
+    const q=(window._slicerQ&&window._slicerQ[id])||"";
+    const filtered=options.filter(o=>!q||o.l.toLowerCase().includes(q.toLowerCase()));
+    const allSel=selectedVals.length===0||selectedVals[0]==="Todos"||selectedVals[0]==="Todas"||selectedVals[0]==="todos";
+    return `<div style="margin-bottom:8px">
+      <div style="font-size:11px;font-weight:600;color:${C.gray};margin-bottom:4px">${label}</div>
+      <div style="border:1.5px solid ${open?C.pink:C.border};border-radius:10px;overflow:hidden;background:#fff">
+        <div onclick="slicerToggle('${id}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;cursor:pointer;background:${open?C.pinkL:'#fff'}">
+          <span id="slc_label_${id}" style="font-size:12px;color:${C.dark};font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${allSel?"Todos":selectedVals.join(", ")}</span>
+          <span style="font-size:10px;color:${C.gray};flex-shrink:0;margin-left:6px">${open?"▲":"▼"}</span>
+        </div>
+        ${open?`
+        <div style="border-top:1px solid ${C.border}">
+          <div style="padding:6px 8px;border-bottom:1px solid ${C.border}">
+            <input id="slcq_${id}" class="field-inp" value="${q}" placeholder="Buscar..." autocomplete="off"
+              oninput="slicerSearch('${id}',this.value)" style="padding:7px 10px;font-size:12px"/>
+          </div>
+          <div id="slc_list_${id}_wrap" style="max-height:160px;overflow-y:auto;-webkit-overflow-scrolling:touch">
+            <div onclick="${onToggle}('${id}','__all__')" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid ${C.border};background:${allSel?C.pinkL:'#fff'}">
+              <div style="width:16px;height:16px;border-radius:4px;border:2px solid ${allSel?C.pink:C.border};background:${allSel?C.pink:'#fff'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                ${allSel?`<span style="color:#fff;font-size:10px;font-weight:800">✓</span>`:""}
+              </div>
+              <span style="font-size:12px;font-weight:600;color:${C.dark}">Todos</span>
+            </div>
+            <div id="slc_list_${id}">${filtered.map(o=>{
+              const sel=!allSel&&selectedVals.includes(o.v);
+              return `<div onclick="${onToggle}('${id}','${o.v.replace(/'/g,"\\'")}','${o.l.replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid #F9F9F9;background:${sel?C.pinkL:'#fff'}">
+                <div style="width:16px;height:16px;border-radius:4px;border:2px solid ${sel?C.pink:C.border};background:${sel?C.pink:'#fff'};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  ${sel?`<span style="color:#fff;font-size:10px;font-weight:800">✓</span>`:""}
+                </div>
+                <span style="font-size:12px;color:${C.dark};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.l}</span>
+              </div>`;
+            }).join("")}</div>
+          </div>
+        </div>`:""}
+      </div>
     </div>`;
   }
+
+  const grpSel=(window._rfSel&&window._rfSel.group)||[];
+  const typeSel=(window._rfSel&&window._rfSel.type)||[];
+  const catSel=(window._rfSel&&window._rfSel.exitCat)||[];
+  const lineSel=(window._rfSel&&window._rfSel.line)||[];
+  const prodSel=(window._rfSel&&window._rfSel.productId)||[];
+
   return`<div class="card">
-    <script>
-      window._fltOpts_group=[{v:"Todos",l:"Todos"},{v:"Men",l:"Men"},{v:"Woman",l:"Woman"}];
-      window._fltOpts_type=[{v:"todos",l:"Todos"},{v:"entrada",l:"Entradas"},{v:"saida",l:"Saidas"}];
-      window._fltOpts_exitCat=[{v:"Todas",l:"Todas"},...${JSON.stringify(EXIT_CATS.map(c=>({v:c,l:c})))}];
-      window._fltOpts_line=[{v:"Todas",l:"Todas"},...${JSON.stringify(allLines.map(l=>({v:l,l:l})))}];
-      window._fltOpts_productId=[{v:"",l:"Todos"},...${JSON.stringify(products.map(p=>({v:String(p.id),l:"["+p.code+"] "+p.name})))}];
-    <\/script>
-    <div style="font-size:13px;font-weight:700;color:${C.pink};margin-bottom:12px">Filtros</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700;color:${C.pink}">Filtros</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:12px;color:${C.gray}">${fh.length} registros</span>
+        <button onclick="clearRf()" style="background:${C.grayL};color:${C.gray};border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer">Limpar</button>
+      </div>
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div>${lbl("Data inicial")}<input type="date" class="field-inp" value="${rf.dateFrom}" onchange="setRf('dateFrom',this.value)"/></div>
       <div>${lbl("Data final")}<input type="date" class="field-inp" value="${rf.dateTo}" onchange="setRf('dateTo',this.value)"/></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-      <div>${lbl("Grupo")}
-        <input id="flt_group" class="field-inp" list="dl_group" value="${rf.group==="Todos"?"Todos":rf.group}" autocomplete="off"
-          onchange="(function(v){setRf('group',v==='Todos'||v===''?'Todos':v)})(this.value)"/>
-        <datalist id="dl_group"><option value="Todos"><option value="Men"><option value="Woman"></datalist>
-      </div>
-      <div>${lbl("Tipo")}
-        <input id="flt_type" class="field-inp" list="dl_type" value="${rf.type==="todos"?"Todos":rf.type==="entrada"?"Entradas":"Saidas"}" autocomplete="off"
-          onchange="(function(v){setRf('type',v==='Entradas'?'entrada':v==='Saidas'?'saida':'todos')})(this.value)"/>
-        <datalist id="dl_type"><option value="Todos"><option value="Entradas"><option value="Saidas"></datalist>
-      </div>
-    </div>
-    <div style="margin-bottom:10px">${lbl("Categoria")}
-      <input id="flt_cat" class="field-inp" list="dl_cat" value="${rf.exitCat}" autocomplete="off"
-        onchange="(function(v){setRf('exitCat',v||'Todas')})(this.value)"/>
-      <datalist id="dl_cat"><option value="Todas">${EXIT_CATS.map(c=>`<option value="${c}">`).join("")}</datalist>
-    </div>
-    <div style="margin-bottom:10px">${lbl("Linha")}
-      <input id="flt_line" class="field-inp" list="dl_line" value="${rf.line}" autocomplete="off"
-        onchange="(function(v){setRf('line',v||'Todas')})(this.value)"/>
-      <datalist id="dl_line"><option value="Todas">${allLines.map(l=>`<option value="${l}">`).join("")}</datalist>
-    </div>
-    <div style="margin-bottom:10px">${lbl("Produto")}
-      <input id="flt_prod" class="field-inp" list="dl_prod" value="${rf.productId?(()=>{const p=products.find(x=>String(x.id)===String(rf.productId));return p?"["+p.code+"] "+p.name:"";})():""}" autocomplete="off" placeholder="Buscar produto..."
-        onchange="(function(v){const m=products.find(p=>'['+p.code+'] '+p.name===v);setRf('productId',m?String(m.id):'');})(this.value)"
-        oninput="(function(v){if(v==='')setRf('productId','');})(this.value)"/>
-      <datalist id="dl_prod"><option value="">${products.map(p=>`<option value="[${p.code}] ${p.name}">`).join("")}</datalist>
-    </div>
-    <div style="margin-bottom:12px">${lbl("Codigo")}
-      <input id="flt_code" class="field-inp" value="${rf.code||""}" placeholder="Ex: 437" autocomplete="off"
-        oninput="rf.code=this.value;renderFilteredList()"/>
-    </div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <button onclick="clearRf()" style="background:${C.grayL};color:${C.gray};border:none;border-radius:10px;padding:9px 16px;font-size:12px;font-weight:600;cursor:pointer">Limpar</button>
-      <span id="flt_count" style="font-size:12px;color:${C.gray}">${fh.length} registros</span>
-    </div>
+    ${slicer("group","Grupo",[{v:"Men",l:"Men"},{v:"Woman",l:"Woman"}],grpSel.length?grpSel:["Todos"],"slicerToggle","slicerSearch")}
+    ${slicer("type","Tipo",[{v:"entrada",l:"Entradas"},{v:"saida",l:"Saidas"}],typeSel.length?typeSel:["Todos"],"slicerToggle","slicerSearch")}
+    ${slicer("exitCat","Categoria",EXIT_CATS.map(c=>({v:c,l:c})),catSel.length?catSel:["Todas"],"slicerToggle","slicerSearch")}
+    ${slicer("line","Linha",allLines.map(l=>({v:l,l:l})),lineSel.length?lineSel:["Todas"],"slicerToggle","slicerSearch")}
+    ${slicer("productId","Produto",products.map(p=>({v:String(p.id),l:"["+p.code+"] "+p.name})),prodSel.length?prodSel:["Todos"],"slicerToggle","slicerSearch")}
+    <div>${lbl("Codigo")}<input id="flt_code" class="field-inp" value="${rf.code||""}" placeholder="Ex: 437" autocomplete="off" oninput="rf.code=this.value;renderFilteredList()"/></div>
   </div>`;
 }
 
-// ── RENDER ──
+
 function render(){document.getElementById("app").innerHTML=buildApp();}
 function buildApp(){
   const low=products.filter(p=>p.min_qty>0&&p.quantity<=p.min_qty);
   const totEst=products.reduce((s,p)=>s+p.quantity*(p.avg_cost||0),0);
   const allOut=history.filter(h=>h.type==="saida");
-  const totRec=allOut.reduce((s,h)=>s+(h.total_sale||0),0);
+  const allVendas=allOut.filter(h=>h.category!=="Perdas");
+  const totRec=allVendas.reduce((s,h)=>s+(h.total_sale||0),0);
   const totCMV=allOut.reduce((s,h)=>s+(h.total_cost||0),0);
   const marg=totRec>0?((totRec-totCMV)/totRec)*100:0;
   const nav=[["dashboard","📊","Painel"],["list","📦","Estoque"],["movement","↕️","Mover"],["report","💰","Relatório"],["history","📋","Histórico"]];
@@ -954,7 +1066,11 @@ async function exportPDF(){
 
 function buildReport(){
   const fh=filtHist();const sai=fh.filter(h=>h.type==="saida"),ent=fh.filter(h=>h.type==="entrada");
-  const totR=sai.reduce((s,h)=>s+(h.total_sale||0),0),totC=sai.reduce((s,h)=>s+(h.total_cost||0),0);
+  const saiVendas=sai.filter(h=>h.category!=="Perdas");
+  const saiPerdas=sai.filter(h=>h.category==="Perdas");
+  const totR=saiVendas.reduce((s,h)=>s+(h.total_sale||0),0);
+  const totC=sai.reduce((s,h)=>s+(h.total_cost||0),0);
+  const totPerdas=saiPerdas.reduce((s,h)=>s+(h.total_cost||0),0);
   const totComp=ent.reduce((s,h)=>s+(h.total_cost||0),0);
   const lucro=totR-totC,marg=totR>0?(lucro/totR)*100:0;
   const totEst=products.reduce((s,p)=>s+p.quantity*(p.avg_cost||0),0);
@@ -1002,6 +1118,9 @@ function buildReport(){
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 14px 0">
     ${kpi(C.blueL,C.blue,"R$ "+fmt(totComp),C.blue,"Total compras")}${kpi(C.goldL,C.gold,"R$ "+fmt(totEst),C.gold,"Estoque (custo)")}
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 14px 0">
+    ${kpi(C.redL,C.red,"R$ "+fmt(totPerdas),C.red,"Perdas (prejuizo)")}${kpi(C.grayL,C.gray,saiPerdas.length,C.gray,"Qtd. perdas")}
   </div>
   ${Object.keys(byCat).length>0?`<div style="font-size:11px;font-weight:700;color:${C.gray};text-transform:uppercase;margin:18px 14px 4px">Por categoria</div>
     ${Object.entries(byCat).map(([cat,d])=>`<div class="card"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1"><div style="font-size:14px;font-weight:700">${cat}</div><div style="font-size:12px;color:${C.gray}">${d.q} itens · CMV: R$ ${fmt(d.c)}</div></div><div style="font-size:15px;font-weight:800;color:${C.green}">R$ ${fmt(d.r)}</div></div></div>`).join("")}`:""}
