@@ -144,7 +144,7 @@ const EXIT_CATS=["Venda","Perdas","Amostras","Brindes","Uso"];
 let products=[],history=[],allLines=[...ALL_LINES_DEFAULT];
 let view="dashboard",toastT=null;
 let listSearch="",listGroup="Todos",listLine="Todas";
-let rf={dateFrom:"",dateTo:"",line:"Todas",group:"Todos",productId:"",code:"",type:"todos",exitCat:"Todas"};
+let rf={dateFrom:"",dateTo:"",line:"Todas",group:"Todos",productId:"",code:"",info:"",type:"todos",exitCat:"Todas"};
 let mov={productId:null,type:"entrada",exitCat:"Venda",date:todayStr()};
 let fd={id:null,code:"",name:"",line:"",group:"Men",info:"",minQty:"",costPrice:"",salePrice:""};
 let pendingDeleteId=null,afterSaveCb=null,modalCb=null;
@@ -172,7 +172,8 @@ function renderList(){
   const fil=products.filter(p=>{
     const s=listSearch.toLowerCase();
     return(!s||p.name.toLowerCase().includes(s)||String(p.code).toLowerCase().includes(s))
-      &&(listGroup==="Todos"||grp(p)===listGroup)&&(listLine==="Todas"||p.line===listLine);
+      &&(listGroup==="Todos"||grp(p)===listGroup)&&(listLine==="Todas"||p.line===listLine)
+      &&(!rf.info||p.info===rf.info);
   });
   document.getElementById("listCount").textContent=fil.length+" produto(s)";
   el.innerHTML=fil.map(p=>{
@@ -443,6 +444,7 @@ function filtHist(){
     if(rf.group!=="Todos"&&(h.grp||"")!==rf.group)return false;
     if(rf.productId&&String(h.product_id)!==String(rf.productId))return false;
     if(rf.code&&!String(h.code||"").toLowerCase().includes(rf.code.toLowerCase()))return false;
+    if(rf.info&&(h.info||"")!==rf.info)return false;
     if(rf.dateFrom){const d=parseDate(h.date),f=parseDate(fromInputDate(rf.dateFrom));if(d&&f&&d<f)return false;}
     if(rf.dateTo){const d=parseDate(h.date),t=parseDate(fromInputDate(rf.dateTo));if(d&&t&&d>t)return false;}
     return true;
@@ -453,11 +455,11 @@ function setRf(k,v){rf[k]=v;render();}
 // ── SLICER STATE ──
 if(!window._slicerOpen)window._slicerOpen={};
 if(!window._slicerQ)window._slicerQ={};
-if(!window._rfSel)window._rfSel={group:[],type:[],exitCat:[],line:[],productId:[]};
+if(!window._rfSel)window._rfSel={group:[],type:[],exitCat:[],line:[],productId:[],info:[]};
 
 function slicerToggle(id, val, label){
   if(!window._slicerOpen)window._slicerOpen={};
-  if(!window._rfSel)window._rfSel={group:[],type:[],exitCat:[],line:[],productId:[]};
+  if(!window._rfSel)window._rfSel={group:[],type:[],exitCat:[],line:[],productId:[],info:[]};
   if(val===undefined){
     // toggle open/close - only render() here since it changes layout
     window._slicerOpen[id]=!window._slicerOpen[id];
@@ -547,6 +549,7 @@ function applySlicerToRf(){
   rf.exitCat=(sel.exitCat&&sel.exitCat.length)?sel.exitCat[0]:"Todas";
   rf.line=(sel.line&&sel.line.length)?sel.line[0]:"Todas";
   rf.productId=(sel.productId&&sel.productId.length)?sel.productId[0]:"";
+  rf.info=(sel.info&&sel.info.length)?sel.info[0]:"";
 }
 function updateFilterCount(){
   const el=document.getElementById("flt_count");
@@ -568,7 +571,7 @@ function renderFilteredList(){
           <div style="font-size:17px">${h.type==="entrada"?"📥":"📤"}</div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.name}</div>
-            <div style="font-size:11px;color:${C.gray}">${h.date} · [${h.code}] · ${h.grp||""}${h.category?" · "+h.category:""}</div>
+            <div style="font-size:11px;color:${C.gray}">${h.date} · [${h.code}] · ${h.grp||""}${h.line?" · "+h.line:""}${h.info?" · "+h.info:""}${h.category?" · "+h.category:""}</div>
             ${h.note?`<div style="font-size:11px;color:${C.gray};font-style:italic">${h.note}</div>`:""}
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
@@ -591,7 +594,7 @@ function renderFilteredList(){
   }
 }
 function clearRf(){
-  rf={dateFrom:"",dateTo:"",line:"Todas",group:"Todos",productId:"",code:"",type:"todos",exitCat:"Todas"};
+  rf={dateFrom:"",dateTo:"",line:"Todas",group:"Todos",productId:"",code:"",info:"",type:"todos",exitCat:"Todas"};
   window._rfSel={group:[],type:[],exitCat:[],line:[],productId:[]};
   window._slicerOpen={};
   window._slicerQ={};
@@ -672,6 +675,7 @@ function filterBar(){
     ${slicer("exitCat","Categoria",EXIT_CATS.map(c=>({v:c,l:c})),catSel.length?catSel:["Todas"],"slicerToggle","slicerSearch")}
     ${slicer("line","Linha",allLines.map(l=>({v:l,l:l})),lineSel.length?lineSel:["Todas"],"slicerToggle","slicerSearch")}
     ${slicer("productId","Produto",products.map(p=>({v:String(p.id),l:"["+p.code+"] "+p.name})),prodSel.length?prodSel:["Todos"],"slicerToggle","slicerSearch")}
+    ${slicer("info","Info Adicional",[...new Set(products.map(p=>p.info).filter(Boolean))].sort().map(i=>({v:i,l:i})),(window._rfSel&&window._rfSel.info&&window._rfSel.info.length)?window._rfSel.info:["Todos"],"slicerToggle","slicerSearch")}
     <div>${lbl("Codigo")}<input id="flt_code" class="field-inp" value="${rf.code||""}" placeholder="Ex: 437" autocomplete="off" oninput="rf.code=this.value;renderFilteredList()"/></div>
   </div>`;
 }
@@ -743,7 +747,8 @@ function buildList(){
   const fil=products.filter(p=>{
     const s=listSearch.toLowerCase();
     return(!s||p.name.toLowerCase().includes(s)||String(p.code).toLowerCase().includes(s))
-      &&(listGroup==="Todos"||grp(p)===listGroup)&&(listLine==="Todas"||p.line===listLine);
+      &&(listGroup==="Todos"||grp(p)===listGroup)&&(listLine==="Todas"||p.line===listLine)
+      &&(!rf.info||p.info===rf.info);
   });
   return`
   <div style="margin:12px 14px 0;position:relative">
@@ -1147,7 +1152,7 @@ function buildHistory(){
       <div style="font-size:17px">${h.type==="entrada"?"📥":"📤"}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.name}</div>
-        <div style="font-size:11px;color:${C.gray}">${h.date} · [${h.code}] · ${h.grp||""}${h.category?" · "+h.category:""}</div>
+        <div style="font-size:11px;color:${C.gray}">${h.date} · [${h.code}] · ${h.grp||""}${h.line?" · "+h.line:""}${h.info?" · "+h.info:""}${h.category?" · "+h.category:""}</div>
         ${h.note?`<div style="font-size:11px;color:${C.gray};font-style:italic">${h.note}</div>`:""}
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
