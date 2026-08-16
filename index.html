@@ -863,6 +863,22 @@ function buildMov(){
 
 
 // ── EXPORT ──
+async function exportBase(){
+  await reloadProducts();
+  const wb = XLSX.utils.book_new();
+  const rows = [["Codigo","Grupo","Linha","Produto","Info Adicional","Preco Custo (R$)","Preco Venda (R$)","Qtd. Minima"]];
+  products.forEach(p=>{
+    rows.push([p.code, grp(p), p.line||"", p.name, p.info||"",
+      p.cost_price||0, p.sale_price||0, p.min_qty||0]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"]=[{wch:10},{wch:10},{wch:30},{wch:40},{wch:20},{wch:16},{wch:16},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, ws, "Base de Produtos");
+  const date = new Date().toLocaleDateString("pt-BR").split("/").join("-");
+  XLSX.writeFile(wb, "Base_Produtos_Grazi_"+date+".xlsx");
+  toast("Base exportada!");
+}
+
 async function exportExcel(){
   await reloadProducts();
   const wb = XLSX.utils.book_new();
@@ -1113,6 +1129,9 @@ function buildReport(){
   <div style="display:flex;gap:8px;margin:12px 14px 0">
     <button onclick="exportPDF()" style="flex:1;background:linear-gradient(135deg,${C.pink},${C.pinkD});color:#fff;border:none;border-radius:12px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Exportar PDF</button>
     <button onclick="exportExcel()" style="flex:1;background:linear-gradient(135deg,#10B981,#059669);color:#fff;border:none;border-radius:12px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Exportar Excel</button>
+  </div>
+  <div style="margin:8px 14px 0">
+    <button onclick="exportBase()" style="width:100%;background:linear-gradient(135deg,${C.blue},#1D4ED8);color:#fff;border:none;border-radius:12px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Exportar Base de Produtos (sem qtd)</button>
   </div>
   ${filterBar()}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 14px 0">
