@@ -171,7 +171,7 @@ function renderList(){
   if(!el){render();return;}
   const fil=products.filter(p=>{
     const s=listSearch.toLowerCase();
-    return(!s||p.name.toLowerCase().includes(s)||String(p.code).toLowerCase().includes(s))
+    return(!s||p.name.toLowerCase().includes(s)||String(p.code).toLowerCase().includes(s)||(p.info||"").toLowerCase().includes(s))
       &&(listGroup==="Todos"||grp(p)===listGroup)&&(listLine==="Todas"||p.line===listLine)
       &&(!rf.info||p.info===rf.info);
   });
@@ -284,7 +284,7 @@ function closeModal(){document.getElementById("prodModal").style.display="none";
 function openNewFromModal(){const cb=modalCb;closeModal();fd={id:null,code:"",name:"",line:"",group:"Men",info:"",minQty:"",costPrice:"",salePrice:""};afterSaveCb=cb;go("form");}
 function renderModal(q){
   const s=q.toLowerCase();
-  const list=products.filter(p=>!s||p.name.toLowerCase().includes(s)||String(p.code).toLowerCase().includes(s)).slice(0,100);
+  const list=products.filter(p=>!s||p.name.toLowerCase().includes(s)||String(p.code).toLowerCase().includes(s)||(p.info||"").toLowerCase().includes(s)).slice(0,100);
   const newBtn=`<div onclick="openNewFromModal()" style="padding:14px 16px;border-bottom:1px solid #F3F4F6;display:flex;align-items:center;gap:10px;cursor:pointer;background:#F9E8EF">
     <span style="font-size:20px">➕</span>
     <div><div style="font-size:13px;font-weight:700;color:#D4527A">Cadastrar novo produto</div>
@@ -293,7 +293,7 @@ function renderModal(q){
     <div class="modal-item" onclick="pickProd(${JSON.stringify(p.id)})">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div>
-        <div style="font-size:11px;color:#6B7280">[${p.code}] · ${grp(p)}${p.line?" · "+p.line:""}</div>
+        <div style="font-size:11px;color:#6B7280">[${p.code}] · ${grp(p)}${p.line?" · "+p.line:""}${p.info?" · "+p.info:""}</div>
       </div>
       <div style="font-size:14px;font-weight:800;color:${p.quantity>0?"#10B981":"#9CA3AF"};flex-shrink:0">${p.quantity}</div>
     </div>`).join("");
@@ -746,7 +746,7 @@ function buildDash(low,totEst,totRec,marg){
 function buildList(){
   const fil=products.filter(p=>{
     const s=listSearch.toLowerCase();
-    return(!s||p.name.toLowerCase().includes(s)||String(p.code).toLowerCase().includes(s))
+    return(!s||p.name.toLowerCase().includes(s)||String(p.code).toLowerCase().includes(s)||(p.info||"").toLowerCase().includes(s))
       &&(listGroup==="Todos"||grp(p)===listGroup)&&(listLine==="Todas"||p.line===listLine)
       &&(!rf.info||p.info===rf.info);
   });
